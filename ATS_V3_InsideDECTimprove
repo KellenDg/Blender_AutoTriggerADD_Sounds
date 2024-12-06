@@ -1,0 +1,139 @@
+import bpy
+from mathutils import Vector
+
+class OBJECT_OT_AddSoundWhenObjectsCollide(bpy.types.Operator):
+    bl_idname = "object.add_sound_when_objects_collide"
+    bl_label = "Add Sound When Objects Collide(V3)"
+
+    def execute(self, context):
+        scene = context.scene
+        c1 = scene.c1_target
+        c2 = scene.c2_target
+
+        if not (c1 and c2):
+            self.report({'ERROR'}, "Please select both C1 and C2 targets")
+            return {'CANCELLED'}
+
+        sound_file = scene.sound_file
+        if not sound_file:
+            self.report({'ERROR'}, "Please select a sound file")
+            return {'CANCELLED'}
+
+        proximity_threshold = scene.proximity_threshold
+        frame_start = scene.myaddon_frame_start
+        frame_end = scene.myaddon_frame_end
+
+        sequencer = bpy.context.scene.sequence_editor_create()
+        in_collision = False  # Track collision state
+
+        for frame in range(frame_start, frame_end + 1):
+            scene.frame_set(frame)
+
+            # Get world-space bounding box corners
+            c1_bounds = [c1.matrix_world @ Vector(corner) for corner in c1.bound_box]
+            c2_bounds = [c2.matrix_world @ Vector(corner) for corner in c2.bound_box]
+
+            # Check for bounding box overlap
+            c1_min = Vector((min(v.x for v in c1_bounds), min(v.y for v in c1_bounds), min(v.z for v in c1_bounds)))
+            c1_max = Vector((max(v.x for v in c1_bounds), max(v.y for v in c1_bounds), max(v.z for v in c1_bounds)))
+            c2_min = Vector((min(v.x for v in c2_bounds), min(v.y for v in c2_bounds), min(v.z for v in c2_bounds)))
+            c2_max = Vector((max(v.x for v in c2_bounds), max(v.y for v in c2_bounds), max(v.z for v in c2_bounds)))
+
+            # Check collision condition: surface touch without overlap
+            collision = (
+                (c1_max.x >= c2_min.x and c1_min.x <= c2_max.x) and
+                (c1_max.y >= c2_min.y and c1_min.y <= c2_max.y) and
+                (c1_max.z >= c2_min.z and c1_min.z <= c2_max.z)
+            ) and not (
+                (c1_min.x > c2_min.x and c1_max.x < c2_max.x) and
+                (c1_min.y > c2_min.y and c1_max.y < c2_max.y) and
+                (c1_min.z > c2_min.z and c1_max.z < c2_max.z)
+            )
+
+            # Play sound on collision start
+            if collision and not in_collision:
+                sequencer.sequences.new_sound(
+                    name="Sound Strip",
+                    filepath=sound_file,
+                    channel=1,
+                    frame_start=frame
+                )
+                in_collision = True  # Update collision state
+            elif not collision:
+                in_collision = False  # Reset collision state
+
+        return {'FINISHED'}
+
+class OBJECT_PT_AddSoundWhenObjectsCollidePanel(bpy.types.Panel):
+    bl_idname = "OBJECT_PT_add_sound_when_objects_collide"
+    bl_label = "Add Sound When Objects Collide"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = 'Tool'
+    
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        layout.prop(scene, "c1_target")
+        layout.prop(scene, "c2_target")
+        layout.prop(scene, "sound_file")
+        layout.prop(scene, "proximity_threshold")
+        layout.prop(scene, "myaddon_frame_start", text="Start Frame")
+        layout.prop(scene, "myaddon_frame_end", text="End Frame")
+
+        layout.operator("object.add_sound_when_objects_collide", text="START SOUND")
+
+def register():
+    bpy.utils.register_class(OBJECT_OT_AddSoundWhenObjectsCollide)
+    bpy.utils.register_class(OBJECT_PT_AddSoundWhenObjectsCollidePanel)
+
+    bpy.types.Scene.c1_target = bpy.props.PointerProperty(
+        name="C1 Target",
+        description="The object that moves",
+        type=bpy.types.Object
+    )
+    bpy.types.Scene.c2_target = bpy.props.PointerProperty(
+        name="C2 Target",
+        description="The stationary object",
+        type=bpy.types.Object
+    )
+    bpy.types.Scene.sound_file = bpy.props.StringProperty(
+        name="Sound File",
+        description="Path to the sound file",
+        default="",
+        subtype='FILE_PATH'
+    )
+    bpy.types.Scene.proximity_threshold = bpy.props.FloatProperty(
+        name="Proximity Threshold",
+        description="Distance within which the sound will play",
+        default=0.1,
+        min=0.01,
+        max=100.0
+    )
+    bpy.types.Scene.myaddon_frame_start = bpy.props.IntProperty(
+        name="Start Frame",
+        description="Start frame for checking proximity",
+        default=1,
+        min=1
+    )
+    bpy.types.Scene.myaddon_frame_end = bpy.props.IntProperty(
+        name="End Frame",
+        description="End frame for checking proximity",
+        default=250,
+        min=1
+    )
+
+def unregister():
+    bpy.utils.unregister_class(OBJECT_OT_AddSoundWhenObjectsCollide)
+    bpy.utils.unregister_class(OBJECT_PT_AddSoundWhenObjectsCollidePanel)
+
+    del bpy.types.Scene.c1_target
+    del bpy.types.Scene.c2_target
+    del bpy.types.Scene.sound_file
+    del bpy.types.Scene.proximity_threshold
+    del bpy.types.Scene.myaddon_frame_start
+    del bpy.types.Scene.myaddon_frame_end
+
+if __name__ == "__main__":
+    register()
